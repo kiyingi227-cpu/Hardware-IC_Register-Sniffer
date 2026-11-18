@@ -1,5 +1,6 @@
 #include "I2CUtils.h"
 
+// BQ28z610 AltManufacturerAccess: send 16-bit subcommand to register 0x3E
 bool I2CUtils::sendAltManufacturerAccess(uint8_t address, uint16_t subcommand) {
     Wire.beginTransmission(address);
     Wire.write(0x3E);
@@ -8,6 +9,7 @@ bool I2CUtils::sendAltManufacturerAccess(uint8_t address, uint16_t subcommand) {
     return (Wire.endTransmission() == 0);
 }
 
+// BQ28z610: read raw MAC data block from register 0x40
 int I2CUtils::readMacDataBlock(uint8_t address, uint8_t *buffer, int maxLen) {
     Wire.beginTransmission(address);
     Wire.write(0x40);
@@ -17,6 +19,44 @@ int I2CUtils::readMacDataBlock(uint8_t address, uint8_t *buffer, int maxLen) {
     while (Wire.available() && i < maxLen) {
         buffer[i++] = Wire.read();
     }
+    return i;
+}
+
+// BQ40z50: send 16-bit subcommand to register 0x44 (ManufacturerBlockAccess) or 0x00
+bool I2CUtils::sendBlockSubcommand(uint8_t address, uint8_t cmdReg, uint16_t subcommand) {
+    // SMBus Block Write: [cmdReg, byte_count=2, LSB, MSB]
+    Wire.beginTransmission(address);
+    Wire.write(cmdReg);
+    Wire.write(0x02); // Length of 2 bytes
+    Wire.write(subcommand & 0xFF);
+    Wire.write((subcommand >> 8) & 0xFF);
+    if (Wire.endTransmission() == 0) return true;
+
+    // Fallback: standard word write [cmdReg, LSB, MSB]
+    return writeWord(address, cmdReg, subcommand);
+}
+
+// BQ40z50: read block response from register 0x44 (ManufacturerBlockAccess)
+int I2CUtils::readBlockData(uint8_t address, uint8_t cmdReg, uint8_t *buffer, int maxLen) {
+    Wire.beginTransmission(address);
+    Wire.write(cmdReg);
+    if (Wire.endTransmission(false) != 0) return -1;
+
+    // Request full payload (up to maxLen + 1 for length byte if SMBus)
+    uint8_t requested = (maxLen + 1 > 36) ? 36 : (maxLen + 1);
+    Wire.requestFrom(address, requested);
+    if (!Wire.available()) return -1;
+
+    // First byte in SMBus block read is the byte count
+    uint8_t blockLen = Wire.read();
+    int bytesToRead = (blockLen < maxLen) ? blockLen : maxLen;
+
+    int i = 0;
+    while (Wire.available() && i < bytesToRead) {
+        buffer[i++] = Wire.read();
+    }
+    // Flush remaining
+    while (Wire.available()) Wire.read();
     return i;
 }
 
@@ -48,7 +88,10 @@ void I2CUtils::scanBus() {
         if (Wire.endTransmission() == 0) {
             Serial.print("Found I2C device at 0x");
             if (addr < 16) Serial.print("0");
-            Serial.println(addr, HEX);
+            Serial.print(addr, HEX);
+            if (addr == 0x55) Serial.print(" (Typical BQ28z610)");
+            else if (addr == 0x16) Serial.print(" (Typical BQ40z50 / SBS Smart Battery)");
+            Serial.println();
             count++;
         }
     }

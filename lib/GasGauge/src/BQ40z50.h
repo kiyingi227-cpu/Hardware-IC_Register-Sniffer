@@ -12,7 +12,7 @@ public:
 
     bool begin() override;
     bool readStatus(bool autoSealAfterRead = false) override;
-    virtual bool fixDevice(uint16_t maxSafeCellMv = 4300) override;
+    bool fixDevice(uint16_t maxSafeCellMv = 4300) override;
     bool sealDevice() override;
     bool unsealDevice() override;
     bool sendFullAccessKey(uint32_t key = 0xFFFFFFFF);
@@ -20,7 +20,15 @@ public:
     bool readPFStatus(uint32_t &pf);
     bool readOperationStatus(uint32_t &opStatus);
 
+    // BQ40z50 specific SBS telemetry
+    bool readPackVoltage(uint16_t &voltageMv);
+    bool readPackCurrent(int16_t &currentMa);
+    bool readTemperature(float &tempC);
+    bool readSOC(uint16_t &socPercent);
+    bool readCapacity(uint16_t &remainMah, uint16_t &fullMah);
+
 private:
     uint8_t _address;
     void printBit(uint32_t val, int bit, const char *label);
+    void printPFFlags(uint32_t pf);
 };
